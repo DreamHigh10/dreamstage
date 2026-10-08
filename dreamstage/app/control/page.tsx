@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useCharacterStore } from '@/store/useCharacterStore';
 import { SpeechService } from '@/lib/speech';
 import { ttsService } from '@/lib/tts';
+import { syncBus } from '@/lib/sync';
 import { Mic, MicOff, UserX, MessageSquare, Play, Loader2, Hand, VideoOff } from 'lucide-react';
 import { GestureService } from '@/lib/gesture';
 import { YouTubeChat } from './YouTubeChat';
@@ -22,10 +23,14 @@ export default function ControlPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const playCharacterSpeech = useCallback((character: 'dream' | 'sidekick', text: string) => {
+      // Remove any tags from spoken text
+      const spokenText = text.replace(/\[SHOW_ON_SCREEN:.*?\]/g, '').trim();
+      if (!spokenText) return;
+
       ttsService.speak(
-          text,
+          spokenText,
           character,
-          () => updateCharacter(character, { isSpeaking: true, text }), // onStart
+          () => updateCharacter(character, { isSpeaking: true, text: spokenText }), // onStart
           () => updateCharacter(character, { isSpeaking: false })      // onEnd
       );
   }, [updateCharacter]);
@@ -34,6 +39,29 @@ export default function ControlPage() {
       // We can now just queue them up and the native TTS queue handles it
       playCharacterSpeech('dream', 'Hello! I am Dream. How can I help you today?');
       playCharacterSpeech('sidekick', 'And I am the sarcastic one. Try not to bore us.');
+  }, [playCharacterSpeech]);
+
+  // Helper to parse tags and queue TTS
+  const processChunk = useCallback((speaker: 'dream' | 'sidekick', text: string) => {
+      // 1. Log it
+      setTranscriptLog(prev => [...prev, `${speaker === 'dream' ? 'Dream' : 'Sidekick'}: ${text}`]);
+
+      // 2. Check for [SHOW_ON_SCREEN: ...] tags
+      const match = text.match(/\[SHOW_ON_SCREEN:(.*?)\]/);
+      if (match && match[1]) {
+          const screenText = match[1].trim();
+          syncBus.emit({
+              type: 'PIN_CARD',
+              payload: {
+                  id: Math.random().toString(),
+                  author: "Dream",
+                  text: screenText
+              }
+          });
+      }
+
+      // 3. Play audio
+      playCharacterSpeech(speaker, text);
   }, [playCharacterSpeech]);
 
   const handlePhraseDetected = useCallback(async (phrase: string) => {
@@ -56,50 +84,78 @@ export default function ControlPage() {
           if (!response.ok) throw new Error('API error');
           if (!response.body) return;
 
-          // Process the streaming response
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let fullText = '';
 
+          // Stream processing: parse as it comes in to reduce latency
+          // We look for 'Dream:' and 'Sidekick:' markers and queue them as soon as a newline hits.
+
+          let currentSpeaker: 'dream' | 'sidekick' | null = null;
+          let currentBuffer = '';
+
           while (true) {
               const { done, value } = await reader.read();
-              if (done) break;
-              fullText += decoder.decode(value, { stream: true });
+              if (done) {
+                  // Flush remaining text that might not have a trailing newline
+                  if (fullText.trim()) {
+                       const trimmed = fullText.trim();
+                       if (trimmed.startsWith('Dream:')) {
+                            if (currentSpeaker && currentBuffer.trim()) processChunk(currentSpeaker, currentBuffer);
+                            currentSpeaker = 'dream';
+                            currentBuffer = trimmed.replace('Dream:', '').trim();
+                       } else if (trimmed.startsWith('Sidekick:')) {
+                            if (currentSpeaker && currentBuffer.trim()) processChunk(currentSpeaker, currentBuffer);
+                            currentSpeaker = 'sidekick';
+                            currentBuffer = trimmed.replace('Sidekick:', '').trim();
+                       } else if (currentSpeaker) {
+                           currentBuffer += ' ' + trimmed;
+                       }
+                  }
+
+                  // Flush final buffer
+                  if (currentSpeaker && currentBuffer.trim()) {
+                      processChunk(currentSpeaker, currentBuffer);
+                  }
+                  break;
+              }
+
+              const chunk = decoder.decode(value, { stream: true });
+              fullText += chunk;
+
+              const lines = fullText.split('\n');
+              // The last line might be incomplete, so we keep it in fullText and process the others
+              fullText = lines.pop() || '';
+
+              for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (!trimmed) continue;
+
+                  if (trimmed.startsWith('Dream:')) {
+                      if (currentSpeaker && currentBuffer.trim()) {
+                           processChunk(currentSpeaker, currentBuffer);
+                      }
+                      currentSpeaker = 'dream';
+                      currentBuffer = trimmed.replace('Dream:', '').trim();
+                  } else if (trimmed.startsWith('Sidekick:')) {
+                      if (currentSpeaker && currentBuffer.trim()) {
+                           processChunk(currentSpeaker, currentBuffer);
+                      }
+                      currentSpeaker = 'sidekick';
+                      currentBuffer = trimmed.replace('Sidekick:', '').trim();
+                  } else if (currentSpeaker) {
+                      currentBuffer += ' ' + trimmed;
+                  }
+              }
           }
 
           setIsProcessing(false);
-
-          // The LLM returns format:
-          // Dream: [text]
-          // Sidekick: [text]
-          const lines = fullText.split('\n').filter(line => line.trim().length > 0);
-
-          let dreamText = '';
-          let sidekickText = '';
-
-          lines.forEach(line => {
-              if (line.startsWith('Dream:')) {
-                  dreamText = line.replace('Dream:', '').trim();
-              } else if (line.startsWith('Sidekick:')) {
-                  sidekickText = line.replace('Sidekick:', '').trim();
-              }
-          });
-
-          // Simply queue them sequentially using the native speech synthesis queue
-          if (dreamText) {
-              playCharacterSpeech('dream', dreamText);
-              setTranscriptLog(prev => [...prev, `Dream: ${dreamText}`]);
-          }
-          if (sidekickText) {
-              playCharacterSpeech('sidekick', sidekickText);
-              setTranscriptLog(prev => [...prev, `Sidekick: ${sidekickText}`]);
-          }
 
       } catch (error) {
           console.error("Failed to fetch chat response:", error);
           setIsProcessing(false);
       }
-  }, [hideCharacters, playCharacterSpeech]);
+  }, [hideCharacters, processChunk]);
 
   useEffect(() => {
     speechServiceRef.current = new SpeechService(
@@ -133,11 +189,14 @@ export default function ControlPage() {
           setIsCameraActive(false);
       } else {
           try {
+              // Show a loading state if we want, but for now just await
+              console.log("ControlPage: Toggling camera ON");
               await gestureServiceRef.current.initialize(videoRef.current);
               gestureServiceRef.current.startTracking();
               setIsCameraActive(true);
           } catch (e) {
               console.error("Could not start camera:", e);
+              alert("Failed to start camera. Please check permissions.");
           }
       }
   };

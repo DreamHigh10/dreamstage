@@ -12,36 +12,56 @@ export class GestureService {
   async initialize(videoElement: HTMLVideoElement) {
     this.video = videoElement;
 
-    // 1. Initialize MediaPipe
-    const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-    );
+    console.log("GestureService: Initializing MediaPipe Vision...");
 
-    this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-        delegate: "GPU"
-      },
-      runningMode: "VIDEO",
-      numHands: 1
-    });
-
-    // 2. Start Camera
     try {
+      // 1. Initialize MediaPipe
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+      );
+
+      console.log("GestureService: WASM loaded, creating HandLandmarker...");
+      this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numHands: 1
+      });
+
+      console.log("GestureService: HandLandmarker created. Requesting camera access...");
+
+      // 2. Start Camera
       this.stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480 }
       });
       this.video.srcObject = this.stream;
+
+      // Wait for the video to be ready before playing to avoid DOM exceptions
+      await new Promise<void>((resolve) => {
+        if (!this.video) return;
+        this.video.onloadedmetadata = () => {
+          resolve();
+        };
+      });
+
       await this.video.play();
+      console.log("GestureService: Camera ready.");
+
     } catch (e) {
-      console.error("Camera access denied or failed", e);
+      console.error("GestureService Error:", e);
       throw e;
     }
   }
 
   startTracking() {
-    if (!this.handLandmarker || !this.video) return;
+    if (!this.handLandmarker || !this.video) {
+        console.warn("GestureService: Cannot start tracking. Not initialized.");
+        return;
+    }
     this.isTracking = true;
+    console.log("GestureService: Tracking started.");
     this.predictWebcam();
   }
 
@@ -51,12 +71,13 @@ export class GestureService {
     if (this.stream) {
         this.stream.getTracks().forEach(track => track.stop());
     }
+    console.log("GestureService: Tracking stopped.");
   }
 
   private predictWebcam = () => {
     if (!this.isTracking || !this.video || !this.handLandmarker) return;
 
-    if (this.video.currentTime !== this.lastVideoTime) {
+    if (this.video.currentTime !== this.lastVideoTime && this.video.readyState >= 2) {
       this.lastVideoTime = this.video.currentTime;
 
       const results = this.handLandmarker.detectForVideo(this.video, performance.now());
@@ -88,6 +109,8 @@ export class GestureService {
       }
     }
 
-    this.animationFrameId = requestAnimationFrame(this.predictWebcam);
+    if (this.isTracking) {
+        this.animationFrameId = requestAnimationFrame(this.predictWebcam);
+    }
   }
 }
