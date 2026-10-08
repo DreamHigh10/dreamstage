@@ -7,6 +7,9 @@ export type SyncEvent =
   | { type: 'WAKE_WORD_DETECTED' }
   | { type: 'CHARACTER_STATE_CHANGE'; payload: { character: 'dream' | 'sidekick'; isSpeaking: boolean; text?: string; isVisible: boolean } }
   | { type: 'DISMISS_CHARACTERS' }
+  | { type: 'CURSOR_MOVE'; payload: { x: number; y: number; isPinching: boolean } }
+  | { type: 'PIN_CARD'; payload: { id: string; author: string; text: string; avatarUrl?: string } }
+  | { type: 'UNPIN_CARD' }
   | { type: 'CONNECTED' }; // Internal
 
 class SyncBus {
@@ -51,20 +54,23 @@ class SyncBus {
   }
 
   async emit(event: SyncEvent) {
-    // Emit locally via BroadcastChannel
+    // Emit locally via BroadcastChannel for high-frequency events like CURSOR_MOVE
+    // to avoid overloading the Next.js dev server with HTTP POST requests.
     if (this.channel) {
       this.channel.postMessage(event);
     }
 
-    // Emit globally via API
-    try {
-      await fetch('/api/sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(event),
-      });
-    } catch (e) {
-      console.error('Failed to emit sync event to server', e);
+    // For low-frequency events, send to SSE server for OBS cross-browser compatibility
+    if (event.type !== 'CURSOR_MOVE') {
+        try {
+          await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(event),
+          });
+        } catch (e) {
+          console.error('Failed to emit sync event to server', e);
+        }
     }
   }
 

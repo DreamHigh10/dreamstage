@@ -4,7 +4,9 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useCharacterStore } from '@/store/useCharacterStore';
 import { SpeechService } from '@/lib/speech';
 import { ttsService } from '@/lib/tts';
-import { Mic, MicOff, UserX, MessageSquare, Play, Loader2 } from 'lucide-react';
+import { Mic, MicOff, UserX, MessageSquare, Play, Loader2, Hand, VideoOff } from 'lucide-react';
+import { GestureService } from '@/lib/gesture';
+import { YouTubeChat } from './YouTubeChat';
 
 export default function ControlPage() {
   const showCharacters = useCharacterStore((state) => state.showCharacters);
@@ -13,8 +15,11 @@ export default function ControlPage() {
 
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCameraActive, setIsCameraActive] = useState(false);
   const [transcriptLog, setTranscriptLog] = useState<string[]>([]);
   const speechServiceRef = useRef<SpeechService | null>(null);
+  const gestureServiceRef = useRef<GestureService | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const playCharacterSpeech = useCallback((character: 'dream' | 'sidekick', text: string) => {
       ttsService.speak(
@@ -107,13 +112,35 @@ export default function ControlPage() {
       }
     );
 
+    gestureServiceRef.current = new GestureService();
+
     return () => {
       if (speechServiceRef.current) {
         speechServiceRef.current.stopListening();
       }
+      if (gestureServiceRef.current) {
+          gestureServiceRef.current.stopTracking();
+      }
       ttsService.stop();
     };
   }, [showCharacters, simulateGreeting, handlePhraseDetected]);
+
+  const toggleCamera = async () => {
+      if (!gestureServiceRef.current || !videoRef.current) return;
+
+      if (isCameraActive) {
+          gestureServiceRef.current.stopTracking();
+          setIsCameraActive(false);
+      } else {
+          try {
+              await gestureServiceRef.current.initialize(videoRef.current);
+              gestureServiceRef.current.startTracking();
+              setIsCameraActive(true);
+          } catch (e) {
+              console.error("Could not start camera:", e);
+          }
+      }
+  };
 
   const toggleListening = () => {
     if (!speechServiceRef.current) return;
@@ -141,6 +168,15 @@ export default function ControlPage() {
 
           <div className="flex gap-4">
             <button
+              onClick={toggleCamera}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                isCameraActive ? 'bg-orange-500 hover:bg-orange-600' : 'bg-neutral-700 hover:bg-neutral-600'
+              }`}
+            >
+              {isCameraActive ? <VideoOff size={20} /> : <Hand size={20} />}
+              {isCameraActive ? 'Stop Hands' : 'Track Hands'}
+            </button>
+            <button
               onClick={toggleListening}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
                 isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-600 hover:bg-blue-700'
@@ -155,6 +191,26 @@ export default function ControlPage() {
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Controls & Log */}
           <div className="space-y-6">
+              <div className="bg-neutral-800 p-6 rounded-xl border border-neutral-700">
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <Hand className="text-orange-400" />
+                  Camera (Hand Tracking)
+                </h2>
+                <div className="aspect-video bg-neutral-900 rounded-lg overflow-hidden border border-neutral-700 relative">
+                    <video
+                        ref={videoRef}
+                        className="w-full h-full object-cover scale-x-[-1]"
+                        playsInline
+                        muted
+                    />
+                    {!isCameraActive && (
+                        <div className="absolute inset-0 flex items-center justify-center text-neutral-500 text-sm">
+                            Camera inactive. Click &quot;Track Hands&quot; to start.
+                        </div>
+                    )}
+                </div>
+              </div>
+
               <div className="bg-neutral-800 p-6 rounded-xl border border-neutral-700">
                 <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                   <MessageSquare className="text-blue-400" />
@@ -221,37 +277,42 @@ export default function ControlPage() {
               </div>
           </div>
 
-          {/* Status Panel */}
-          <div className="bg-neutral-800 p-6 rounded-xl border border-neutral-700">
-            <h2 className="text-xl font-semibold mb-4">System Status</h2>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between p-2 rounded bg-neutral-900/50">
-                <span className="text-neutral-400">Microphone</span>
-                <span className={isListening ? 'text-green-400' : 'text-neutral-500'}>
-                  {isListening ? 'Active (Listening...)' : 'Inactive'}
-                </span>
-              </div>
-              <div className="flex justify-between p-2 rounded bg-neutral-900/50">
-                <span className="text-neutral-400">Sync Bus</span>
-                <span className="text-green-400">Connected (Broadcast & SSE)</span>
-              </div>
-              <div className="flex justify-between p-2 rounded bg-neutral-900/50">
-                <span className="text-neutral-400">LLM Connection</span>
-                <span className={isProcessing ? "text-yellow-400" : "text-green-400"}>
-                    {isProcessing ? 'Thinking...' : 'Ready'}
-                </span>
-              </div>
-              <div className="flex justify-between p-2 rounded bg-neutral-900/50">
-                <span className="text-neutral-400">Stage Link</span>
-                <a href="/stage" target="_blank" className="text-blue-400 hover:underline">
-                  Open Stage in New Tab ↗
-                </a>
-              </div>
-            </div>
+          {/* Third Column area: Live Chat */}
+          <div className="space-y-6">
+              <YouTubeChat />
 
-            <div className="mt-6 p-4 bg-blue-900/20 border border-blue-900/50 rounded-lg text-sm text-blue-200">
-              <strong>Tip:</strong> Open the Stage link. Click &quot;Start Mic&quot; and say &quot;Hi Dream&quot;. Once they appear, talk to them normally. When done, say &quot;Bye Dream&quot; to dismiss them. You can also type text in the manual trigger input to test without a microphone.
-            </div>
+              {/* Status Panel */}
+              <div className="bg-neutral-800 p-6 rounded-xl border border-neutral-700">
+                <h2 className="text-xl font-semibold mb-4">System Status</h2>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between p-2 rounded bg-neutral-900/50">
+                    <span className="text-neutral-400">Microphone</span>
+                    <span className={isListening ? 'text-green-400' : 'text-neutral-500'}>
+                      {isListening ? 'Active (Listening...)' : 'Inactive'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between p-2 rounded bg-neutral-900/50">
+                    <span className="text-neutral-400">Sync Bus</span>
+                    <span className="text-green-400">Connected (Broadcast & SSE)</span>
+                  </div>
+                  <div className="flex justify-between p-2 rounded bg-neutral-900/50">
+                    <span className="text-neutral-400">LLM Connection</span>
+                    <span className={isProcessing ? "text-yellow-400" : "text-green-400"}>
+                        {isProcessing ? 'Thinking...' : 'Ready'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between p-2 rounded bg-neutral-900/50">
+                    <span className="text-neutral-400">Stage Link</span>
+                    <a href="/stage" target="_blank" className="text-blue-400 hover:underline">
+                      Open Stage in New Tab ↗
+                    </a>
+                  </div>
+                </div>
+
+                <div className="mt-6 p-4 bg-blue-900/20 border border-blue-900/50 rounded-lg text-sm text-blue-200">
+                  <strong>Tip:</strong> Open the Stage link. Click &quot;Start Mic&quot; and say &quot;Hi Dream&quot;. Once they appear, talk to them normally. When done, say &quot;Bye Dream&quot; to dismiss them. You can also type text in the manual trigger input to test without a microphone.
+                </div>
+              </div>
           </div>
         </section>
 

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "DreamStage YouTube Chat Pinner",
+  "version": "1.0",
+  "description": "Pins YouTube live chat messages to DreamStage via local API.",
+  "permissions": ["activeTab"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/live_chat*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ]
+}

@@ -76,3 +76,26 @@ OPENAI_API_KEY=your_actual_key_here
 - [ ] **Conversation:** Speak to them (e.g., "What do you think of this game?"). They should process the text, print it in the conversation log, and speak back (Dream first, then Sidekick) with distinct voices and lip-sync animation.
 - [ ] **Text Input:** Try typing a message in the manual input field and pressing Enter.
 - [ ] **Dismiss:** Say "Bye Dream" to dismiss them.
+
+## Phase 3: Hand Tracking & Magic Cursor
+The `/control` dashboard now supports MediaPipe Hand tracking!
+1. Click **Track Hands** and allow webcam access.
+2. Hold up your hand. A magic Doctor Strange-style cursor will appear on the `/stage` overlay, mirroring your index finger.
+3. Pinch your thumb and index finger together to trigger the "grab" animation (the cursor ring will turn red and shrink).
+
+## Phase 4 & 5: YouTube Chat & Pull-Forward Cards
+There are two ways to bring comments onto the stage:
+
+### Method A: Mock Control Panel Feed
+1. Open the `/control` dashboard.
+2. In the "YouTube Live Chat" section, click **Start Mock Stream**.
+3. Hover over any message and click the **Pin** icon.
+4. The message will fly onto the `/stage` overlay with a portal animation. Click the **X** or the **Clear Pinned** button to dismiss it.
+
+### Method B: Chrome Extension (Real YouTube Chat)
+1. Open Google Chrome and go to `chrome://extensions/`.
+2. Enable **Developer mode** (top right corner).
+3. Click **Load unpacked** and select the `dreamstage/chrome-extension` folder.
+4. Go to any live YouTube stream (`youtube.com/live_chat...`).
+5. Ensure your Next.js server (`npm run dev`) is running.
+6. Click any chat message on YouTube. It will flash orange, and instantly appear as a floating card on your `/stage` overlay!

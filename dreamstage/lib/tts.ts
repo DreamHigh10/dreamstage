@@ -13,8 +13,8 @@ export class TTSService {
   private configs: Record<'dream' | 'sidekick', TTSConfig> = {
     dream: {
       character: 'dream',
-      pitch: 1.2, // Slightly higher pitched, cheerful
-      rate: 1.1,
+      pitch: 1.8, // Slightly higher pitched, cheerful
+      rate: 1.15,
       voiceNameSubstring: 'Female',
     },
     sidekick: {
