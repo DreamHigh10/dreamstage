@@ -60,3 +60,19 @@ npm run dev &
 - [ ] **Test Manual Trigger:** Click "Trigger 'Hi Dream' Sequence" in the control panel. Both characters should appear on the stage with a greeting animation.
 - [ ] **Test Dismiss:** Click "Dismiss Characters". They should animate out.
 - [ ] **Test Voice Trigger:** Click "Start Mic", allow microphone permissions, and clearly say "Hi Dream". The characters should appear automatically.
+
+## Phase 2 Setup Updates
+To use the LLM chat functionality, you must add an OpenAI API key.
+Create a `.env.local` file in the root of the project:
+```
+OPENAI_API_KEY=your_actual_key_here
+```
+
+### Test Checklist (Phase 2)
+- [ ] **Env variable:** Ensure `OPENAI_API_KEY` is set.
+- [ ] **Start the app:** Run `npm run dev &`.
+- [ ] **Open Control & Stage:** Open `/control` and `/stage`.
+- [ ] **Wake Word:** Say "Hi Dream" to summon them.
+- [ ] **Conversation:** Speak to them (e.g., "What do you think of this game?"). They should process the text, print it in the conversation log, and speak back (Dream first, then Sidekick) with distinct voices and lip-sync animation.
+- [ ] **Text Input:** Try typing a message in the manual input field and pressing Enter.
+- [ ] **Dismiss:** Say "Bye Dream" to dismiss them.
